@@ -106,46 +106,33 @@ def optimize_position(cylinder, seed, img):
 
 ########################################################################################################################
 
-def optimize_angle(cylinder, seed, img):
 
-    # Calculating step size based on radius and height:
+def optimize_angle(cylinder, seed, raw_img):
+    img = raw_img.transpose(2,1,0)
+    # Calculating step size:
+    #import ipdb; ipdb.set_trace()
     step_dec = math.degrees(2*np.arcsin(cylinder.radius/(2*cylinder.height)))
     mod90 = 90 % step_dec
     mod360 = 360 % step_dec
     div90 = 90//step_dec
     div360 = 360//step_dec
-    step_psi = step_dec + mod90/div90
-    step_theta = step_dec + mod360/div360
+    step_psi = 5#step_dec + mod90/div90
+    step_theta = 5#step_dec + mod360/div360
 
     fit_score = []
-    theta_arr = []
     psi_arr = []
-    psi= 0
+    theta_arr = []
+    psi = 0
 
-    while psi <= 90:
+    while psi <= 180:
         theta = 0
-
-        if psi == 0:  # Don't need to rotate if vertical
-            cropped_img = mask_dataset(cylinder, seed, img)
-            score = score_fit(cylinder, cropped_img, translated= False)
-            vis.visualise_cylinder(str(score) + ' theta ' + str(theta) + ' psi ' + str(psi) + '.tif', img, cylinder,
-                                   seed, translated= False)
+        while theta < 360:
+            cylinder.rotate(psi, theta)
+            score = score_fit(cylinder, img)
             fit_score.append(score)
             theta_arr.append(theta)
             psi_arr.append(psi)
-        else:
-            while theta < 360:
-                cylinder.rotate(theta, psi)
-                cropped_img = mask_dataset(cylinder, seed, img)
-                score = score_fit(cylinder, cropped_img, translated = True)
-                vis.visualise_cylinder(str(score) + ' theta' + str(theta) + ' psi ' + str(psi) + '.tif', img, cylinder,
-                                       seed, translated= True)
-
-                fit_score.append(score)
-                theta_arr.append(theta)
-                psi_arr.append(psi)
-
-                theta = step_theta + theta
+            theta = step_theta + theta
         psi = step_psi + psi
 
     best_score = max(fit_score)
@@ -153,7 +140,7 @@ def optimize_angle(cylinder, seed, img):
     theta = theta_arr[high_score_index]
     psi = psi_arr[high_score_index]
 
-    cylinder.rotate(theta, psi)
+    #cylinder.rotate(theta, psi)
 
     return best_score, theta, psi
 
@@ -185,7 +172,7 @@ def optimize_radius(cylinder, seed, img):
 
 ########################################################################################################################
 
-def score_fit(cylinder, cropped_img, translated = True):
+def score_fit(cylinder, cropped_img):
     """
     Calculates correlation coefficient between original image and cylinder.
 
@@ -193,19 +180,42 @@ def score_fit(cylinder, cropped_img, translated = True):
         Correlation score.
 
     """
-
-    if translated == True:
-        img_values = cropped_img[[*cylinder.translated_indices.T]]
-        sdA = np.abs(img_values - np.mean(img_values))
-        sdB = np.abs(cylinder.translated_values - np.mean(cylinder.translated_values))
-    else:
-        img_values = cropped_img[[*cylinder.original_indices.T]]
-        sdA = np.abs(img_values - np.mean(img_values))
-        sdB = np.abs(cylinder.original_values - np.mean(cylinder.original_values))
+    cylinder_indices = cylinder.translated_indices
+    img_values = cropped_img[[*cylinder_indices.T]]
+    sdA = np.abs(img_values - np.mean(img_values))
+    sdB = np.abs(cylinder.translated_values - np.mean(cylinder.translated_values))
     reg = np.sum(sdA * sdB)
     return reg / np.sqrt(np.sum(sdA ** 2) * (np.sum(sdB ** 2)))
 
 ########################################################################################################################
+
+def optimize_radius(cylinder, seed, img):
+
+    h = cylinder.height
+    r = 1
+    r_step = 1
+    max_r = 5
+    fit_score = []
+    rad_arr = []
+
+    while r < max_r:
+
+        cylinder(r, h)
+        cropped_img = seed_cropped_img(cylinder, seed, img)
+        score = score_fit(cylinder, cylinder.original_indices, cropped_img)
+        fit_score.append(score)
+        rad_arr.append(r)
+        r = r+r_step
+
+    best_score = max(fit_score)
+    high_score_index = fit_score.index(best_score)
+    best_rad = rad_arr[high_score_index]
+
+    return best_score, best_rad
+
+########################################################################################################################
+
+#######################################################################################################################
 
 def mask_dataset(cylinder, ref_point, img):
 
