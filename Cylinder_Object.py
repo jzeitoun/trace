@@ -1,5 +1,7 @@
 import numpy as np
-import Math as math
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import axes3d, Axes3D
+
 import transforms3d as t3d
 
 class Cylinder(object):
@@ -11,11 +13,11 @@ class Cylinder(object):
         self.center = None
         self.psi = 0 #angle around z
         self.theta = 0 #angle around x
-        self.original_volume = np.array(self._make_gaussian_cylinder(radius=radius, height=height)) #cylinder with radius and height where intensities are Gaussian around center of top of cylinder.
+        self.original_volume = np.array(self._make_gaussian_cylinder(radius=radius, height=height)) # cylinder with radius and height where intensities are Gaussian around center of top of cylinder.
         self.original_center = [height+radius, height+radius, radius]
-        self.original_indices = np.argwhere(self.original_volume) #returns coordinates where cylinder exists. An N x 3 array.
+        self.original_indices = np.argwhere(self.original_volume) # returns coordinates where cylinder exists. An N x 3 array.
         self.original_values = self.original_volume[[*self.original_indices.T]]
-        self.translated_volume = np.zeros(self.original_volume.shape) #initialization for rotation
+        self.translated_volume = self.original_volume.copy() # initialization for rotation
 
 ########################################################################################################################
     @property
@@ -83,8 +85,6 @@ class Cylinder(object):
         Rotates cylinder by specified angles first in psi and then by theta.
         Angles are in degrees.
         '''
-
-
         self.psi = psi
         self.theta = theta
         # Translate center of cylinder to origin
@@ -97,15 +97,6 @@ class Cylinder(object):
         translated_gaussian_cylinder[:] = 0
         translated_gaussian_cylinder[[*new_indices.T]] = self.original_values
         self.translated_volume = translated_gaussian_cylinder
-
-########################################################################################################################
-
-    def move(self, offset):
-
-        moved_indices = self.original_indices + offset
-        return moved_indices
-
-
 
 ########################################################################################################################
 
@@ -175,7 +166,14 @@ class Cylinder(object):
 # ** MISC ** #
 ########################################################################################################################
 
-    def get_image_index(self, indices, seed = None):
-        img_coordinates = indices
+    def get_image_indices(self, seed=None):
+        x, y, z = seed
+        x_start = x - self.height - self.radius
+        x_end = x + self.height + self.radius + 1
+        y_start = y - self.height - self.radius
+        y_end = y + self.height + self.radius + 1
+        z_start = z - self.radius
+        z_end = z + self.height + self.radius
+        return (slice(z_start, z_end), slice(y_start, y_end), slice(x_start, x_end))
 
 
