@@ -1,32 +1,40 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import axes3d, Axes3D
+from scipy.ndimage.interpolation import map_coordinates, zoom
 
 import transforms3d as t3d
 
 class Cylinder(object):
 
-    def __init__(self, radius=1, height=5):
+    def __init__(self, radius=4, height=10, psf=1.5, first=False):
         self.radius = radius
-        self.radius_top = radius
         self.height = height
-        self.center = None
-        self.psi = 0 #angle around z
-        self.theta = 0 #angle around x
-        self.original_volume = np.array(self._make_gaussian_cylinder(radius=radius, height=height)) # cylinder with radius and height where intensities are Gaussian around center of top of cylinder.
-        self.original_center = [height+radius, height+radius, radius]
-        self.original_indices = np.argwhere(self.original_volume) # returns coordinates where cylinder exists. An N x 3 array.
-        self.original_values = self.original_volume[[*self.original_indices.T]]
+        self.psf = psf
+        self.first = first
+        self.psi = 0 # angle around z
+        self.theta = 0 # angle around x
+        self.reference_point = [height+radius, height+radius, height+radius]
+        self.original_volume = np.array(self._make_gaussian_cylinder(radius=radius, height=height))
+        self.original_coords = np.argwhere(self.original_volume) # returns coordinates where cylinder exists. An N x 3 array.
         self.translated_volume = self.original_volume.copy() # initialization for rotation
 
 ########################################################################################################################
     @property
-    def translated_indices(self):
+    def translated_coords(self):
         return np.argwhere(self.translated_volume > 0)
 
     @property
+    def scaled_coords(self):
+        return np.argwhere(self.scaled_volume > 0)
+
+    @property
     def translated_values(self):
-        return self.translated_volume[[*self.translated_indices.T]]
+        return self.translated_volume[[*self.translated_coords.T]]
+
+    @property
+    def scaled_values(self):
+        return self.scaled_volume[[*self.scaled_coords.T]]
 
 ########################################################################################################################
 # ** BASIC CYLINDER FUNCTIONS: CREATING AND ROTATING ** #
@@ -37,9 +45,11 @@ class Cylinder(object):
           Execution time with default params: 1.46ms
           Added radius padding to allow for edge of cylinder transforming beyond height.
         """
-
-        #includes 0 as a value
-        x, y, z = np.mgrid[ -height - radius:height + radius + 1, -height - radius:height + radius + 1, -radius:height + radius]
+        if self.first:
+            x,y,z = np.array(np.mgrid[-height - radius:height + radius + 1, -height - radius:height + radius + 1, -height - radius:height + radius + 1])
+        else:
+            x,y,z = np.array(np.mgrid[-height - radius:height + radius + 1, -height - radius:height + radius + 1, -radius:height + radius + 1])
+        self.xyz_coords = np.array((x, y, z))
         return (x ** 2 + y ** 2 <= radius ** 2) & (z <= height - 1) & (z >= 0) # -1 from height b/c zero indexing
 
 ########################################################################################################################
@@ -68,13 +78,13 @@ class Cylinder(object):
           Cylinder is a 3d array 8bit values.
           Execution time with diameter of 51, height of 25, and fwhm of 5: 308us
         """
-        #generate cylinder
+        # generate cylinder
         cylinder_mask = self._make_cylinder_mask(radius, height)
         mask_length, mask_width, mask_height = cylinder_mask.shape
-        #generate gaussian profile cylinder
+        # generate gaussian profile cylinder
         gaussian_kernel = self._make_gaussian(mask_length, radius, center)
         gaussian_cylinder = np.stack([gaussian_kernel] * mask_height, axis=2)
-        #mask out values outside cylinder mask by setting them to 0
+        # mask out values outside cylinder mask by setting them to 0
         gaussian_cylinder[~cylinder_mask] = 0
         return gaussian_cylinder
 
@@ -87,16 +97,19 @@ class Cylinder(object):
         '''
         self.psi = psi
         self.theta = theta
-        # Translate center of cylinder to origin
-        indices = self.original_indices - self.original_center
-        rot_mat = t3d.euler.euler2mat(np.deg2rad(psi), 0, np.deg2rad(theta), axes='sxyz')
-        new_indices = np.rint(rot_mat.dot(indices.T).T).astype(np.int64)
-        # Translate center of cylinder back
-        new_indices = new_indices + self.original_center
-        translated_gaussian_cylinder = self.translated_volume
-        translated_gaussian_cylinder[:] = 0
-        translated_gaussian_cylinder[[*new_indices.T]] = self.original_values
-        self.translated_volume = translated_gaussian_cylinder
+        rot_mat = t3d.euler.euler2mat(np.deg2rad(psi), 0, np.deg2rad(theta), axes='rxyz')
+        transformed_xyz_coords = rot_mat.dot(self.xyz_coords.reshape(3,-1)).reshape(self.xyz_coords.shape)
+        corrected_transformed_xyz_coords = (transformed_xyz_coords.reshape(3,-1).T + self.reference_point).T.reshape(self.xyz_coords.shape)
+        map_coordinates(self.original_volume, corrected_transformed_xyz_coords, order=0, output=self.translated_volume)
+
+    def scale(self, factor=None):
+        '''
+        Scales cylinder along Z axis.
+        '''
+        if not factor:
+            factor = self.psf
+        self.scaled_volume = zoom(self.translated_volume, (1, 1, factor), order=1)
+        self.scaled_volume[self.scaled_volume < .001] = 0
 
 ########################################################################################################################
 
@@ -139,41 +152,21 @@ class Cylinder(object):
         plt.show()
 
 ########################################################################################################################
-# ** SCORING FUNCTIONS ** #
-########################################################################################################################
-
-    def _score_correlation(self, new_indices, new_values, img):
-
-        """
-        Calculates correlation coefficient between original image and translated image.
-
-        Returns:
-            Correlation score.
-
-        """
-        img_coords = img[new_indices]
-        sdA = np.abs(new_values - np.mean(new_values))
-        sdB = np.abs(img[img_coords] - np.mean(img[img_coords]))
-        reg = np.sum(sdA * sdB)
-        return reg / np.sqrt(np.sum(sdA ** 2) * (np.sum(sdB ** 2)))
-
-
-########################################################################################################################
-# ** OPTIMIZATION FUNCTIONS ** #
-#
-
-########################################################################################################################
 # ** MISC ** #
 ########################################################################################################################
 
     def get_image_indices(self, seed=None):
         x, y, z = seed
+
         x_start = x - self.height - self.radius
         x_end = x + self.height + self.radius + 1
         y_start = y - self.height - self.radius
         y_end = y + self.height + self.radius + 1
         z_start = z - self.radius
-        z_end = z + self.height + self.radius
-        return (slice(z_start, z_end), slice(y_start, y_end), slice(x_start, x_end))
+        z_end = z + self.height + self.radius + 1
 
+        if self.first:
+            z_start = z_start - self.height
+
+        return (slice(z_start, z_end), slice(y_start, y_end), slice(x_start, x_end))
 

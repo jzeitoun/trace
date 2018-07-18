@@ -1,16 +1,24 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import axes3d, Axes3D
+
 import tifffile as tiff
+
+from Util import check_bounds
 
 def overlay_cylinder(filename, img, cylinder, seed_coordinate):
     # Seed coordinate should be in "x,y,z" (this translates to "z,y,x" in numpy
     # array coordinates)
 
     transposed_cylinder = cylinder.translated_volume.transpose(2,1,0)
+
     volume = np.zeros(img.shape, dtype='uint8')
-    cropped_volume = volume[cylinder.get_image_indices(seed_coordinate)]
-    cropped_volume[:] = transposed_cylinder * 255
+    indices = cylinder.get_image_indices(seed_coordinate)
+    corrected_indices, pad_sequence = check_bounds(indices, img)
+    cropped_volume = volume[corrected_indices]
+    cylinder_indices = [[x[0], y - x[1]] for x,y in zip(pad_sequence, transposed_cylinder.shape)]
+    cylinder_slice = list(map(lambda x: slice(*x), cylinder_indices))
+    cropped_volume[:] = transposed_cylinder[cylinder_slice] * 255
     overlaid_img = np.stack((volume, img), axis=1)
     tiff.imsave(filename, overlaid_img, imagej=True)
 
