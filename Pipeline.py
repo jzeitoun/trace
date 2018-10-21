@@ -27,8 +27,8 @@ whole_img = tif.imread(filename)
 #seed = [53, 84, 5]
 seed = [63, 96, 1]
 
-
-cylinder = Cylinder(default_radius, default_height, psf=2, first=True)
+# Create default cylinder
+cylinder = Cylinder(default_radius, default_height, 0, 0, psf=2, first=True)
 
 # Correct indices (if negative) and pad cropped image if necessary
 indices = cylinder.get_image_indices(seed)
@@ -36,14 +36,25 @@ corrected_indices, pad_sequence = check_bounds(indices, whole_img)
 
 cropped_img = whole_img[corrected_indices]
 padded_cropped_img = np.pad(cropped_img, pad_sequence, mode='constant')
-score, best_theta, best_psi = opt.optimize_angle(cylinder, seed, padded_cropped_img)
-cylinder.rotate(best_psi, best_theta)
 
-vis.overlay_cylinder('output.tif', whole_img, cylinder, seed)
+# Loop through  all seeds here.
+# Extend out from a single seed
+seed_flag = 0  # update to 1 to stop extending
+while seed_flag != 1:
+    # Optimizing angle:
+    score, best_theta, best_psi = opt.optimize_angle(cylinder, seed, padded_cropped_img)
+    cylinder.rotate(best_psi, best_theta)
 
-#best_score, best_theta, best_psi = Optimize.optimize_angle(cylinder, seeds[257], img)
+    # Optimizing radius:
+    best_radius = opt.optimize_radius(cylinder, seed, padded_cropped_img)
+    cylinder = Cylinder(default_radius, default_height, best_psi, best_theta, psf=2, first=True)
+    vis.overlay_cylinder('output.tif', whole_img, cylinder, seed)
 
-#fit_score = cylinder._score_correlation(img)
+    # Optimize height
+    best_height = default_height
+
+    # Repeating:
+    seed = cylinder.get_bottom(seed, best_height, best_psi, best_theta)
 
 #if __name__ == '__main__':
 #   main()

@@ -7,13 +7,13 @@ import transforms3d as t3d
 
 class Cylinder(object):
 
-    def __init__(self, radius=4, height=10, psf=1.5, first=False):
+    def __init__(self, radius=4, height=10, psi=0, theta=0, psf=1.5, first=False):
         self.radius = radius
         self.height = height
         self.psf = psf
         self.first = first
-        self.psi = 0 # angle around z
-        self.theta = 0 # angle around x
+        self.psi = psi # angle around z
+        self.theta = theta # angle around x
         self.reference_point = [height+radius, height+radius, height+radius]
         self.original_volume = np.array(self._make_gaussian_cylinder(radius=radius, height=height))
         self.original_coords = np.argwhere(self.original_volume) # returns coordinates where cylinder exists. An N x 3 array.
@@ -111,11 +111,24 @@ class Cylinder(object):
         self.scaled_volume = zoom(self.translated_volume, (1, 1, factor), order=1)
         self.scaled_volume[self.scaled_volume < .001] = 0
 
-########################################################################################################################
+    def get_bottom(self, top, height, psi=0, theta=0):
+        '''
+        Gets the other end of the cylinder given a seed and optimized psi and theta. To be used for extending cylinder.
+        :param top: Seed point of cylinder to extend
+        :psi: Best angle to transform
+        :theta: Best angle to transform
+        :return: end of correctly oriented   cylinder
+        '''
+
+        orig_end = [x + y for x, y in zip(top,[0, height, 0])]
+        rot_mat = t3d.euler.euler2mat(np.deg2rad(psi), 0, np.deg2rad(theta), axes='sxyz')
+        bottom = np.rint(rot_mat.dot(orig_end.T).T).astype(np.int64)
+        return bottom
+    ########################################################################################################################
 
 # ** OUTPUT FUNCTIONS ** #
 
-    ########################################################################################################################
+########################################################################################################################
 
     def render_voxels(self, volume_choice='translated'):
 

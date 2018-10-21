@@ -75,8 +75,8 @@ def optimize_angle(cylinder, seed, raw_img):
 
     #cylinder.rotate(theta, psi)
 
-    return best_score, theta, psi
-
+    #return best_score, theta, psi
+    return theta, psi
 ########################################################################################################################
 
 def optimize_radius(cylinder, seed, img):
@@ -101,8 +101,8 @@ def optimize_radius(cylinder, seed, img):
     high_score_index = fit_score.index(best_score)
     best_rad = rad_arr[high_score_index]
 
-    return best_score, best_rad
-
+    #return best_score, best_rad
+    return best_rad
 ########################################################################################################################
 
 def score_fit(cylinder, cropped_img):
